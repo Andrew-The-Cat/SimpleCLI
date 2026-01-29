@@ -17,9 +17,10 @@ type ConsoleCfg struct {
 	OverwriteCommands bool
 }
 
-// RegisterCommand registers a new command with its associated function.
+// RegisterCommand registers a new command with its associated function. The function signature must take a slice of strings as arguments and return an error.
 // If the command already exists and OverwriteCommands is false, it will skip registration and log a warning.
 // If OverwriteCommands is true, it will overwrite the existing command.
+// This method is thread-safe and will not allow command registration while the console is running.
 func (cfg *ConsoleCfg) RegisterCommand(command string, commandFunc func([]string) error) {
 	// Check if the command list is locked
 	if cfg.Running {
