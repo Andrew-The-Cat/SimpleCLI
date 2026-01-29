@@ -13,7 +13,7 @@ type ConsoleCfg struct {
 	Logger            *log.Logger
 	Running           bool
 	Commands          map[string]func([]string) error
-	Mutex             sync.Mutex
+	mutex             sync.Mutex
 	OverwriteCommands bool
 }
 
@@ -28,12 +28,12 @@ func (cfg *ConsoleCfg) RegisterCommand(command string, commandFunc func([]string
 		cfg.Logger.Println("[WARN] If you're seeing this message you might be trying to register commands after starting the console")
 		return
 	}
-	if !cfg.Mutex.TryLock() {
+	if !cfg.mutex.TryLock() {
 		cfg.Logger.Println("[WARN] If you're seeing this message you might be trying to register commands from multiple threads")
 		cfg.Logger.Println("[WARN] For thread safety please refrain from doing so")
 		return
 	}
-	defer cfg.Mutex.Unlock()
+	defer cfg.mutex.Unlock()
 
 	if _, exists := cfg.Commands[command]; exists {
 		if !cfg.OverwriteCommands {
@@ -60,14 +60,17 @@ func NewConsoleCfg(logger *log.Logger, overwriteCommands bool) *ConsoleCfg {
 		}(),
 		Running:           false,
 		Commands:          make(map[string]func([]string) error),
-		Mutex:             sync.Mutex{},
+		mutex:             sync.Mutex{},
 		OverwriteCommands: overwriteCommands,
 	}
 }
 
 // StartConsole starts the console interface, allowing users to input commands.
 // It registers default commands like "help" and "stop".
-func (cfg *ConsoleCfg) StartConsole() {
+// The console runs in a separate goroutine and listens for user input until the Running flag is set to false.
+// When the console stops it sends a signal to the provided chanStop channel.
+func (cfg *ConsoleCfg) StartConsole(chanStop chan struct{}) {
+	// Register default commands
 	cfg.RegisterCommand("help", func(args []string) error {
 		fmt.Println("Available Commands:")
 		for cmd := range cfg.Commands {
@@ -87,10 +90,9 @@ func (cfg *ConsoleCfg) StartConsole() {
 	cfg.Logger.Print("Starting console...")
 	fmt.Println("Starting console...")
 
-	cfg.Mutex.Lock()
-	defer cfg.Mutex.Unlock()
-	cfg.Running = true
 	go func() {
+		cfg.mutex.Lock()
+		cfg.Running = true
 		reader := bufio.NewReader(os.Stdin)
 		for cfg.Running {
 			fmt.Print(">> ")
@@ -119,6 +121,9 @@ func (cfg *ConsoleCfg) StartConsole() {
 				}
 			}
 		}
-		os.Exit(0)
+		cfg.mutex.Unlock()
+		cfg.Logger.Print("Console stopped.")
+		fmt.Println("Console stopped.")
+		chanStop <- struct{}{}
 	}()
 }
