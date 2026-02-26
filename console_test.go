@@ -12,6 +12,7 @@ func TestHook(t *testing.T) {
 	t.Run("TestNewConsoleCfg", TestNewConsoleCfg)
 	t.Run("TestRegisterCommandWhileRunning", TestRegisterCommandWhileRunning)
 	t.Run("TestRegisterCommandConcurrency", TestRegisterCommandConcurrency)
+	t.Run("TestExtractFlags", TestExtractFlags)
 }
 
 func TestRegisterCommand(t *testing.T) {
@@ -102,5 +103,43 @@ func TestRegisterCommandConcurrency(t *testing.T) {
 
 	if len(console.Commands) != 1 {
 		t.Errorf("Expected 1 command after concurrent registration, got %d", len(console.Commands))
+	}
+}
+
+func TestExtractFlags(t *testing.T) {
+	args := []string{"-h", "-p", "8080"}
+	cmd := NewCommandRegister("sth", func(strings []string, m map[string]string) error {
+		return nil
+	}).WithFlag("h", false).WithFlag("p", true)
+
+	res, _, err := extractFlags(args, *cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(res) != 2 {
+		t.Fatalf("Expected 2 flags, got %d", len(res))
+	}
+	if res["h"] != "" {
+		t.Fatalf("Expected h to be empty, got %s", res["h"])
+	}
+	if res["p"] != "8080" {
+		t.Fatalf("Expected p to be 8080, got %s", res["p"])
+	}
+
+	args = []string{"-p", "-h"}
+	res, _, err = extractFlags(args, *cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if res["p"] != "-h" {
+		t.Fatalf("Expected p to be -h, got %s", res["p"])
+	}
+
+	args = []string{"-p"}
+	_, _, err = extractFlags(args, *cmd)
+	if err == nil {
+		t.Fatalf("Expected extraction to fail due to -p requiring a value")
 	}
 }
