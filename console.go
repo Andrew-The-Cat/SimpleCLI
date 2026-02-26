@@ -9,10 +9,15 @@ import (
 	"sync"
 )
 
+type Command struct {
+	Exec func([]string) error
+	Desc string
+}
+
 type ConsoleCfg struct {
 	Logger            *log.Logger
 	Running           bool
-	Commands          map[string]func([]string) error
+	Commands          map[string]Command
 	mutex             sync.Mutex
 	OverwriteCommands bool
 }
@@ -21,7 +26,7 @@ type ConsoleCfg struct {
 // If the command already exists and OverwriteCommands is false, it will skip registration and log a warning.
 // If OverwriteCommands is true, it will overwrite the existing command.
 // This method is thread-safe and will not allow command registration while the console is running.
-func (cfg *ConsoleCfg) RegisterCommand(command string, commandFunc func([]string) error) {
+func (cfg *ConsoleCfg) RegisterCommand(command string, commandFunc func([]string) error, description string) {
 	// Check if the command list is locked
 	if cfg.Running {
 		cfg.Logger.Println("[WARN] For thread safety, commands cannot be registered while the console is running")
@@ -43,7 +48,15 @@ func (cfg *ConsoleCfg) RegisterCommand(command string, commandFunc func([]string
 		cfg.Logger.Printf("\t|--\tCommand %s already registered, overwriting", command)
 	}
 	cfg.Logger.Printf("\t|--\tRegistering command %s", command)
-	cfg.Commands[command] = commandFunc
+	cfg.Commands[command] = Command{
+		Exec: commandFunc,
+		Desc: description,
+	}
+}
+
+// RegisterCommandSimple is a convenience method for registering commands without a description. It calls RegisterCommand with an empty description.
+func (cfg *ConsoleCfg) RegisterCommandSimple(command string, commandFunc func([]string) error) {
+	cfg.RegisterCommand(command, commandFunc, "")
 }
 
 // NewConsoleCfg creates a new ConsoleCfg instance that will manage console commands.
@@ -59,7 +72,7 @@ func NewConsoleCfg(logger *log.Logger, overwriteCommands bool) *ConsoleCfg {
 			return log.New(os.Stdout, "CONSOLE: ", log.Ldate|log.Ltime|log.Lshortfile)
 		}(),
 		Running:           false,
-		Commands:          make(map[string]func([]string) error),
+		Commands:          make(map[string]Command),
 		mutex:             sync.Mutex{},
 		OverwriteCommands: overwriteCommands,
 	}
@@ -71,20 +84,24 @@ func NewConsoleCfg(logger *log.Logger, overwriteCommands bool) *ConsoleCfg {
 // When the console stops it sends a signal to the provided chanStop channel.
 func (cfg *ConsoleCfg) StartConsole(chanStop chan struct{}) {
 	// Register default commands
-	cfg.RegisterCommand("help", func(args []string) error {
+	cfg.RegisterCommandSimple("help", func(args []string) error {
 		fmt.Println("Available Commands:")
 		for cmd := range cfg.Commands {
 			fmt.Println(" -", cmd)
+			if desc := cfg.Commands[cmd].Desc; desc != "" {
+				fmt.Printf("\t|--\t%s\n", desc)
+			}
 		}
 		return nil
 	})
 
+	// Stop command; when executed will return a signal in the chanStop channel
 	cfg.RegisterCommand("stop", func(args []string) error {
 		cfg.Logger.Print("Received stop command via console")
 		fmt.Println("Stopping application...")
 		cfg.Running = false
 		return nil
-	})
+	}, "Stops the console and signals the application to stop")
 
 	// Console mode for imputing Commands
 	cfg.Logger.Print("Starting console...")
@@ -109,13 +126,13 @@ func (cfg *ConsoleCfg) StartConsole(chanStop chan struct{}) {
 			args := strings.Split(line, " ")
 
 			if cmdFunc, exists := cfg.Commands[args[0]]; exists {
-				err := cmdFunc(args[1:])
+				err := cmdFunc.Exec(args[1:])
 				if err != nil {
 					fmt.Println("Error executing command:", err)
 				}
 			} else {
 				fmt.Println("Unknown command:", args)
-				err := cfg.Commands["help"](nil)
+				err := cfg.Commands["help"].Exec(nil)
 				if err != nil {
 					continue
 				}
