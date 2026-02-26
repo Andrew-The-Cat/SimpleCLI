@@ -22,11 +22,11 @@ type ConsoleCfg struct {
 	OverwriteCommands bool
 }
 
-// RegisterCommand registers a new command with its associated function. The function signature must take a slice of strings as arguments and return an error.
+// RegisterCommandWithDescription registers a new command with its associated function. The function signature must take a slice of strings as arguments and return an error.
 // If the command already exists and OverwriteCommands is false, it will skip registration and log a warning.
 // If OverwriteCommands is true, it will overwrite the existing command.
 // This method is thread-safe and will not allow command registration while the console is running.
-func (cfg *ConsoleCfg) RegisterCommand(command string, commandFunc func([]string) error, description string) {
+func (cfg *ConsoleCfg) RegisterCommandWithDescription(command string, commandFunc func([]string) error, description string) {
 	// Check if the command list is locked
 	if cfg.Running {
 		cfg.Logger.Println("[WARN] For thread safety, commands cannot be registered while the console is running")
@@ -54,9 +54,9 @@ func (cfg *ConsoleCfg) RegisterCommand(command string, commandFunc func([]string
 	}
 }
 
-// RegisterCommandSimple is a convenience method for registering commands without a description. It calls RegisterCommand with an empty description.
-func (cfg *ConsoleCfg) RegisterCommandSimple(command string, commandFunc func([]string) error) {
-	cfg.RegisterCommand(command, commandFunc, "")
+// RegisterCommand is a convenience method for registering commands without a description. It calls RegisterCommandWithDescription with an empty description.
+func (cfg *ConsoleCfg) RegisterCommand(command string, commandFunc func([]string) error) {
+	cfg.RegisterCommandWithDescription(command, commandFunc, "")
 }
 
 // NewConsoleCfg creates a new ConsoleCfg instance that will manage console commands.
@@ -84,7 +84,7 @@ func NewConsoleCfg(logger *log.Logger, overwriteCommands bool) *ConsoleCfg {
 // When the console stops it sends a signal to the provided chanStop channel.
 func (cfg *ConsoleCfg) StartConsole(chanStop chan struct{}) {
 	// Register default commands
-	cfg.RegisterCommandSimple("help", func(args []string) error {
+	cfg.RegisterCommand("help", func(args []string) error {
 		fmt.Println("Available Commands:")
 		for cmd := range cfg.Commands {
 			fmt.Println(" -", cmd)
@@ -96,7 +96,7 @@ func (cfg *ConsoleCfg) StartConsole(chanStop chan struct{}) {
 	})
 
 	// Stop command; when executed will return a signal in the chanStop channel
-	cfg.RegisterCommand("stop", func(args []string) error {
+	cfg.RegisterCommandWithDescription("stop", func(args []string) error {
 		cfg.Logger.Print("Received stop command via console")
 		fmt.Println("Stopping application...")
 		cfg.Running = false
