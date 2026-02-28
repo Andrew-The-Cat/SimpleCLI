@@ -30,6 +30,8 @@ type ConsoleCfg struct {
 }
 
 // NewCommandRegister returns a new Command that can be put into a cfg.Register
+// if the exec function (the function that is executed when the command is called) returns an error, it will be displayed along with the command's description.
+// Make sure not to display the description twice
 func NewCommandRegister(name string, exec func([]string, map[string]string) error) *Command {
 	return &Command{Name: name, Exec: exec}
 }
@@ -49,7 +51,6 @@ func (c *Command) WithFlag(controlString string, expectsValue bool) *Command {
 }
 
 func (cfg *ConsoleCfg) Register(c Command) error {
-	// Check if the command list is locked
 	if cfg.Running {
 		cfg.Logger.Println("[WARN] For thread safety, commands cannot be registered while the console is running")
 		cfg.Logger.Println("[WARN] If you're seeing this message you might be trying to register commands after starting the console")
@@ -77,10 +78,9 @@ func (cfg *ConsoleCfg) Register(c Command) error {
 	return nil
 }
 
-// RegisterCommandWithDescription registers a new command with its associated function. The function signature must take a slice of strings as arguments and return an error.
-// If the command already exists and OverwriteCommands is false, it will skip registration and log a warning.
-// If OverwriteCommands is true, it will overwrite the existing command.
-// This method is thread-safe and will not allow command registration while the console is running.
+// RegisterCommandWithDescription registers a new command.
+// Depending on OverwriteCommands it will either skip registering a command that already exists or overwrite it.
+// The method will not allow registering commands while the console is running.
 // @Deprecated - command is deprecated in favor of cfg.Register(NewCommandRegister(name, exec))
 func (cfg *ConsoleCfg) RegisterCommandWithDescription(command string, commandFunc func(args []string) error, description string) {
 	c := NewCommandRegister(command, func(exec func([]string) error) func([]string, map[string]string) error {
@@ -95,15 +95,14 @@ func (cfg *ConsoleCfg) RegisterCommandWithDescription(command string, commandFun
 	}
 }
 
-// RegisterCommand is a convenience method for registering commands without a description. It calls RegisterCommandWithDescription with an empty description.
+// RegisterCommand is a convenient method for registering commands without a description.
 // @Deprecated - command is deprecated in favor of cfg.Register(NewCommandRegister(name, exec))
 func (cfg *ConsoleCfg) RegisterCommand(command string, commandFunc func(args []string) error) {
 	cfg.RegisterCommandWithDescription(command, commandFunc, "")
 }
 
 // NewConsoleCfg creates a new ConsoleCfg instance that will manage console commands.
-// If overwriteCommands is true, registering a command that already exists will overwrite it.
-// If false, it will skip registering the command and log a warning.
+// overwriteCommands determines the behavior when trying to register a command that already exists.
 // The logger parameter is used for logging console activities. If nil, a default logger will be created on stdout.
 func NewConsoleCfg(logger *log.Logger, overwriteCommands bool) *ConsoleCfg {
 	return &ConsoleCfg{
@@ -120,10 +119,10 @@ func NewConsoleCfg(logger *log.Logger, overwriteCommands bool) *ConsoleCfg {
 	}
 }
 
-// StartConsole starts the console interface, allowing users to input commands.
+// StartConsole starts the console interface that listens in stdin for commands that have been registered
 // It registers default commands like "help" and "stop".
-// The console runs in a separate goroutine and listens for user input until the Running flag is set to false.
-// When the console stops it sends a signal to the provided chanStop channel.
+// The console runs in a separate goroutine and provides a signal to chanStop when it receives the "stop" command or any command stops execution
+// To stop execution all a command needs to do is set cfg.Running to false.
 func (cfg *ConsoleCfg) StartConsole(chanStop chan struct{}) {
 	// Register default commands
 	cfg.RegisterCommand("help", func(args []string) error {
@@ -137,7 +136,6 @@ func (cfg *ConsoleCfg) StartConsole(chanStop chan struct{}) {
 		return nil
 	})
 
-	// Stop command; when executed will return a signal in the chanStop channel
 	cfg.RegisterCommandWithDescription("stop", func(args []string) error {
 		cfg.Logger.Print("Received stop command via console")
 		fmt.Println("Stopping application...")
@@ -145,7 +143,6 @@ func (cfg *ConsoleCfg) StartConsole(chanStop chan struct{}) {
 		return nil
 	}, "Stops the console and signals the application to stop")
 
-	// Console mode for imputing Commands
 	cfg.Logger.Print("Starting console...")
 	fmt.Println("Starting console...")
 
@@ -176,6 +173,8 @@ func (cfg *ConsoleCfg) StartConsole(chanStop chan struct{}) {
 				err = cmdFunc.Exec(newArgs, flags)
 				if err != nil {
 					fmt.Println("Error executing command:", err)
+					fmt.Println(cmdFunc.Desc)
+					continue
 				}
 			} else {
 				fmt.Println("Unknown command:", args)
@@ -200,6 +199,7 @@ func (cfg *ConsoleCfg) StartConsole(chanStop chan struct{}) {
 =======================
 */
 
+// parseFlag checks if the inputted argument starts with "-" and whether it appears in the given list of flags
 func parseFlag(argument string, possibleFlags []Flag) (Flag, error) {
 	if len(argument) == 0 {
 		return Flag{}, fmt.Errorf("no argument specified")
@@ -220,6 +220,8 @@ func parseFlag(argument string, possibleFlags []Flag) (Flag, error) {
 	return Flag{}, fmt.Errorf("unknown argument: %s", argument)
 }
 
+// extractFlags iterates through all the arguments given to a command and extracts the flags that it can,
+// returning a map of them with their respective values if expectsValue is set to true
 func extractFlags(args []string, cmdFunc Command) (map[string]string, []string, error) {
 	flags := make(map[string]string)
 	newArgs := make([]string, 0, len(args))
