@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -127,7 +128,13 @@ func (cfg *ConsoleCfg) StartConsole(chanStop chan struct{}) {
 	// Register default commands
 	cfg.RegisterCommand("help", func(args []string) error {
 		fmt.Println("Available Commands:")
-		for cmd := range cfg.Commands {
+
+		keys := make([]string, 0, len(cfg.Commands))
+		for _, k := range cfg.Commands {
+			keys = append(keys, k.Name)
+		}
+		sort.Strings(keys)
+		for _, cmd := range keys {
 			fmt.Println(" -", cmd)
 			if desc := cfg.Commands[cmd].Desc; desc != "" {
 				fmt.Printf("\t|--\t%s\n", desc)
