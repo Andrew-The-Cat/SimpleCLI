@@ -28,12 +28,13 @@ type ConsoleCfg struct {
 	Commands          map[string]Command
 	mutex             sync.Mutex
 	OverwriteCommands bool
+	Prefix            string
 }
 
-// NewCommandRegister returns a new Command that can be put into a cfg.Register
+// NewCommandRegister returns a blank Command instance with the given name and exec function.
 // if the exec function (the function that is executed when the command is called) returns an error, it will be displayed along with the command's description.
 // Make sure not to display the description twice
-func NewCommandRegister(name string, exec func([]string, map[string]string) error) *Command {
+func NewCommandRegister(name string, exec func(args []string, flags map[string]string) error) *Command {
 	return &Command{Name: name, Exec: exec}
 }
 
@@ -44,7 +45,7 @@ func (c *Command) WithDescription(description string) *Command {
 }
 
 // WithFlag adds a flag to the command for parsing during execution.
-// expectsValue determines if the argument right after the flag will be parsed together with it
+// expectsValue determines if the argument right after the flag will be parsed together with it.
 // Example -p 8080 wil resolve in the function flags parameter as flags["p"] = 8080
 func (c *Command) WithFlag(controlString string, expectsValue bool) *Command {
 	c.Flags = append(c.Flags, Flag{controlString, expectsValue})
@@ -117,12 +118,18 @@ func NewConsoleCfg(logger *log.Logger, overwriteCommands bool) *ConsoleCfg {
 		Commands:          make(map[string]Command),
 		mutex:             sync.Mutex{},
 		OverwriteCommands: overwriteCommands,
+		Prefix:            ">>",
 	}
 }
 
-// StartConsole starts the console interface that listens in stdin for commands that have been registered
+// SetPrefix changes the prefix (default ">>") that is shown before the user input in the console.
+func (cfg *ConsoleCfg) SetPrefix(prefix string) {
+	cfg.Prefix = prefix
+}
+
+// StartConsole begins listening on stdin for registered commands.
 // It registers default commands like "help" and "stop".
-// The console runs in a separate goroutine and provides a signal to chanStop when it receives the "stop" command or any command stops execution
+// The console runs in a separate goroutine and provides a signal to chanStop when it receives the "stop" command or any command stops execution.
 // To stop execution all a command needs to do is set cfg.Running to false.
 func (cfg *ConsoleCfg) StartConsole(chanStop chan struct{}) {
 	// Register default commands
@@ -158,7 +165,7 @@ func (cfg *ConsoleCfg) StartConsole(chanStop chan struct{}) {
 		cfg.Running = true
 		reader := bufio.NewReader(os.Stdin)
 		for cfg.Running {
-			fmt.Print(">> ")
+			fmt.Print(cfg.Prefix)
 			line, err := reader.ReadString('\n')
 			if err != nil {
 				fmt.Println("Error reading command:", err)
